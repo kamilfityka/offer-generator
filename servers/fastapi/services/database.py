@@ -11,8 +11,11 @@ from sqlmodel import SQLModel
 from models.sql.async_presentation_generation_status import (
     AsyncPresentationGenerationTaskModel,
 )
+from models.sql.crm_company import CrmCompanyModel
+from models.sql.crm_contact import CrmContactModel
 from models.sql.image_asset import ImageAsset
 from models.sql.key_value import KeyValueSqlModel
+from models.sql.offer import OfferModel
 from models.sql.ollama_pull_status import OllamaPullStatus
 from models.sql.presentation import PresentationModel
 from models.sql.slide import SlideModel
@@ -63,6 +66,9 @@ async def create_db_and_tables():
                     TemplateModel.__table__,
                     WebhookSubscription.__table__,
                     AsyncPresentationGenerationTaskModel.__table__,
+                    CrmCompanyModel.__table__,
+                    CrmContactModel.__table__,
+                    OfferModel.__table__,
                 ],
             )
         )

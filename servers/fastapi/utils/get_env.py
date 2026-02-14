@@ -117,3 +117,17 @@ def get_dall_e_3_quality_env():
 # Gpt Image 1.5 Quality
 def get_gpt_image_1_5_quality_env():
     return os.getenv("GPT_IMAGE_1_5_QUALITY")
+
+
+# Raynet CRM
+def get_raynet_api_url_env():
+    return os.getenv("RAYNET_API_URL")
+
+
+def get_raynet_api_key_env():
+    return os.getenv("RAYNET_API_KEY")
+
+
+# Gotenberg
+def get_gotenberg_url_env():
+    return os.getenv("GOTENBERG_URL")
