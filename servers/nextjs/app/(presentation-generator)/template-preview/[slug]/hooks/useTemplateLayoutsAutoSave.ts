@@ -1,10 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { FASTAPI_URL } from '@/constants';
 import { getHeader } from '@/app/(presentation-generator)/services/api/header';
 import { ApiResponseHandler } from '@/app/(presentation-generator)/services/api/api-error-handler';
-import { ProcessedSlide } from '@/app/custom-template/types';
 import { CustomTemplateLayout } from '@/app/hooks/useCustomTemplates';
 
 interface LayoutPayload {
@@ -13,10 +11,16 @@ interface LayoutPayload {
     layout_name: string;
 }
 
+interface TemplateLayoutSlideState {
+    react?: string;
+    layout_name?: string;
+    processing?: boolean;
+}
+
 interface UseTemplateLayoutsAutoSaveOptions {
     templateId: string | null;
     layouts: CustomTemplateLayout[];
-    slideStates: ProcessedSlide[];
+    slideStates: TemplateLayoutSlideState[];
     debounceMs?: number;
     enabled?: boolean;
 }
@@ -72,7 +76,7 @@ export const useTemplateLayoutsAutoSave = ({
             setSaveStatus('saving');
             console.log('🔄 Auto-saving template layouts...');
 
-            const response = await fetch(`${FASTAPI_URL}/api/v1/ppt/template/update`, {
+            const response = await fetch('/api/v1/ppt/template/update', {
                 method: 'PUT',
                 headers: getHeader(),
                 body: JSON.stringify({
