@@ -1,3 +1,5 @@
+export type { TemplateLayoutsWithSettings } from "./utils";
+
 import { TemplateWithData, TemplateGroupSettings, createTemplateEntry, TemplateLayoutsWithSettings } from "./utils";
 
 
