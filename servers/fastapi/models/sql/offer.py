@@ -11,6 +11,15 @@ class OfferModel(SQLModel, table=True):
 
     id: uuid.UUID = Field(primary_key=True, default_factory=uuid.uuid4)
 
+    # Raynet CRM references (needed for write-back)
+    raynet_company_id: Optional[str] = Field(
+        sa_column=Column(String, nullable=True), default=None
+    )
+    raynet_contact_id: Optional[str] = Field(
+        sa_column=Column(String, nullable=True), default=None
+    )
+    raynet_opportunity_id: Optional[int] = Field(default=None)
+
     # Client snapshot (frozen at offer creation time)
     company_name: str
     company_nip: Optional[str] = None

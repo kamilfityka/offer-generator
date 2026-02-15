@@ -55,6 +55,7 @@ services:
       - COMFYUI_WORKFLOW=${COMFYUI_WORKFLOW}
       - RAYNET_API_URL=${RAYNET_API_URL}
       - RAYNET_API_KEY=${RAYNET_API_KEY}
+      - RAYNET_LOGIN=${RAYNET_LOGIN}
       - GOTENBERG_URL=http://gotenberg:3000
 
   production-gpu:
@@ -102,6 +103,7 @@ services:
       - COMFYUI_WORKFLOW=${COMFYUI_WORKFLOW}
       - RAYNET_API_URL=${RAYNET_API_URL}
       - RAYNET_API_KEY=${RAYNET_API_KEY}
+      - RAYNET_LOGIN=${RAYNET_LOGIN}
       - GOTENBERG_URL=http://gotenberg:3000
 
   development:
@@ -141,6 +143,7 @@ services:
       - COMFYUI_WORKFLOW=${COMFYUI_WORKFLOW}
       - RAYNET_API_URL=${RAYNET_API_URL}
       - RAYNET_API_KEY=${RAYNET_API_KEY}
+      - RAYNET_LOGIN=${RAYNET_LOGIN}
       - GOTENBERG_URL=http://gotenberg:3000
 
   development-gpu:
@@ -187,6 +190,7 @@ services:
       - COMFYUI_WORKFLOW=${COMFYUI_WORKFLOW}
       - RAYNET_API_URL=${RAYNET_API_URL}
       - RAYNET_API_KEY=${RAYNET_API_KEY}
+      - RAYNET_LOGIN=${RAYNET_LOGIN}
       - GOTENBERG_URL=http://gotenberg:3000
 
 volumes:

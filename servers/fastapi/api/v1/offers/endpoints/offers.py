@@ -1,5 +1,7 @@
+import logging
 import os
 import uuid
+from datetime import date as date_type
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -10,16 +12,26 @@ from sqlmodel import select
 from models.sql.offer import OfferModel
 from services.database import get_async_session
 from services.offer_generation_service import OfferGenerationService
+from services.raynet_crm_service import RaynetCrmService
 from utils.get_env import get_app_data_directory_env
+
+logger = logging.getLogger(__name__)
 
 OFFERS_ROUTER = APIRouter(prefix="/offers", tags=["Offers"])
 
 offer_gen_service = OfferGenerationService()
+crm_service = RaynetCrmService()
 
 ALLOWED_STATUSES = {"draft", "generated", "sent", "accepted", "expired"}
 
 
+# ── Request models ──────────────────────────────────────
+
 class CreateOfferRequest(BaseModel):
+    # Raynet IDs (needed for CRM write-back)
+    raynet_company_id: Optional[str] = None
+    raynet_contact_id: Optional[str] = None
+    # Client snapshot
     company_name: str
     company_nip: Optional[str] = None
     company_address: Optional[str] = None
@@ -27,13 +39,20 @@ class CreateOfferRequest(BaseModel):
     contact_last_name: Optional[str] = None
     contact_phone: Optional[str] = None
     contact_email: Optional[str] = None
+    # Offer data
     title: str
-    valid_until: Optional[str] = None  # ISO date string: YYYY-MM-DD
+    valid_until: Optional[str] = None  # YYYY-MM-DD
 
 
 class UpdateStatusRequest(BaseModel):
     status: str
 
+
+class SendToCrmRequest(BaseModel):
+    estimated_value: Optional[float] = None
+
+
+# ── CRUD ────────────────────────────────────────────────
 
 @OFFERS_ROUTER.post("")
 async def create_offer(
@@ -41,8 +60,6 @@ async def create_offer(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Create a new offer (draft) with client data snapshot."""
-    from datetime import date as date_type
-
     valid_until = None
     if request.valid_until:
         try:
@@ -51,6 +68,8 @@ async def create_offer(
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
     offer = OfferModel(
+        raynet_company_id=request.raynet_company_id,
+        raynet_contact_id=request.raynet_contact_id,
         company_name=request.company_name,
         company_nip=request.company_nip,
         company_address=request.company_address,
@@ -87,6 +106,8 @@ async def get_offer(
     return _offer_to_dict(offer)
 
 
+# ── File upload ─────────────────────────────────────────
+
 @OFFERS_ROUTER.post("/{offer_id}/upload-description")
 async def upload_description(
     offer_id: str,
@@ -121,6 +142,8 @@ async def upload_description(
     return {"message": "Description uploaded", "file_path": file_path}
 
 
+# ── AI + PDF generation ────────────────────────────────
+
 @OFFERS_ROUTER.post("/{offer_id}/generate-pdf")
 async def generate_pdf(
     offer_id: str,
@@ -141,7 +164,7 @@ async def generate_pdf(
             detail="No description file found. Upload a description first.",
         )
 
-    # Step 1: Generate content with AI
+    # Step 1: AI content
     ai_content = await offer_gen_service.generate_content(
         company_name=offer.company_name,
         company_nip=offer.company_nip,
@@ -165,7 +188,7 @@ async def generate_pdf(
         ai_generated_content=ai_content,
     )
 
-    # Step 3: Generate PDF
+    # Step 3: PDF via Gotenberg
     app_data = get_app_data_directory_env() or "/app_data"
     pdf_dir = os.path.join(app_data, "offers", "pdf")
     os.makedirs(pdf_dir, exist_ok=True)
@@ -173,7 +196,7 @@ async def generate_pdf(
 
     await offer_gen_service.generate_pdf(html_content, pdf_path)
 
-    # Step 4: Update offer record
+    # Step 4: Update record
     offer.ai_generated_content = ai_content
     offer.document_path = pdf_path
     offer.status = "generated"
@@ -183,6 +206,92 @@ async def generate_pdf(
 
     return _offer_to_dict(offer)
 
+
+# ── Send to CRM (Opportunity + Document + Activity) ────
+
+@OFFERS_ROUTER.post("/{offer_id}/send-to-crm")
+async def send_to_crm(
+    offer_id: str,
+    request: SendToCrmRequest,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """
+    Full CRM write-back flow:
+    1. POST /opportunity  – create sales opportunity
+    2. POST /document     – attach offer PDF
+    3. POST /activity     – log the email/action
+    4. Update offer status to 'sent'
+    """
+    offer = await _get_offer_or_404(session, offer_id)
+
+    if not offer.raynet_company_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Offer has no Raynet company ID. Select a CRM company when creating the offer.",
+        )
+
+    if not offer.document_path or not os.path.exists(offer.document_path):
+        raise HTTPException(
+            status_code=400,
+            detail="PDF not generated yet. Generate the PDF first.",
+        )
+
+    try:
+        # 1. Create Opportunity
+        valid_from = str(offer.created_at.date()) if offer.created_at else None
+        valid_till = str(offer.valid_until) if offer.valid_until else None
+
+        opp_result = crm_service.create_opportunity(
+            name=f"Oferta: {offer.title}",
+            company_raynet_id=offer.raynet_company_id,
+            person_raynet_id=offer.raynet_contact_id,
+            estimated_value=request.estimated_value,
+            valid_from=valid_from,
+            valid_till=valid_till,
+        )
+        opp_data = await opp_result
+
+        # Extract opportunity ID from response
+        opp_id = opp_data.get("data", {}).get("id") or opp_data.get("id")
+        if not opp_id:
+            raise RuntimeError(f"Could not extract opportunity ID from response: {opp_data}")
+
+        offer.raynet_opportunity_id = int(opp_id)
+
+        # 2. Upload Document (PDF) to opportunity
+        await crm_service.upload_document(
+            name=f"Oferta {offer.title}",
+            opportunity_raynet_id=int(opp_id),
+            pdf_path=offer.document_path,
+        )
+
+        # 3. Create Activity (email log)
+        contact_name = " ".join(filter(None, [offer.contact_first_name, offer.contact_last_name]))
+        await crm_service.create_activity(
+            subject=f"Wysłanie oferty: {offer.title}",
+            company_raynet_id=offer.raynet_company_id,
+            person_raynet_id=offer.raynet_contact_id,
+            opportunity_raynet_id=int(opp_id),
+            note=f"Oferta PDF wysłana do klienta{f' ({contact_name})' if contact_name else ''}.",
+        )
+
+        # 4. Update status
+        offer.status = "sent"
+        session.add(offer)
+        await session.commit()
+        await session.refresh(offer)
+
+        return {
+            **_offer_to_dict(offer),
+            "crm_opportunity_id": int(opp_id),
+            "message": "Offer sent to CRM successfully",
+        }
+
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+# ── Status & delete ────────────────────────────────────
 
 @OFFERS_ROUTER.patch("/{offer_id}/status")
 async def update_status(
@@ -214,7 +323,6 @@ async def delete_offer(
     """Delete an offer."""
     offer = await _get_offer_or_404(session, offer_id)
 
-    # Clean up files
     for path in [offer.description_file_path, offer.document_path]:
         if path and os.path.exists(path):
             os.remove(path)
@@ -244,6 +352,8 @@ async def download_pdf(
     )
 
 
+# ── Helpers ─────────────────────────────────────────────
+
 async def _get_offer_or_404(session: AsyncSession, offer_id: str) -> OfferModel:
     try:
         uid = uuid.UUID(offer_id)
@@ -260,6 +370,9 @@ async def _get_offer_or_404(session: AsyncSession, offer_id: str) -> OfferModel:
 def _offer_to_dict(offer: OfferModel) -> dict:
     return {
         "id": str(offer.id),
+        "raynet_company_id": offer.raynet_company_id,
+        "raynet_contact_id": offer.raynet_contact_id,
+        "raynet_opportunity_id": offer.raynet_opportunity_id,
         "company_name": offer.company_name,
         "company_nip": offer.company_nip,
         "company_address": offer.company_address,

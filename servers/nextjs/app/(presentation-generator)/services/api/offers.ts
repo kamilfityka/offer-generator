@@ -20,6 +20,9 @@ export interface CrmContact {
 
 export interface Offer {
   id: string;
+  raynet_company_id: string | null;
+  raynet_contact_id: string | null;
+  raynet_opportunity_id: number | null;
   company_name: string;
   company_nip: string | null;
   company_address: string | null;
@@ -38,6 +41,8 @@ export interface Offer {
 }
 
 export interface CreateOfferPayload {
+  raynet_company_id?: string;
+  raynet_contact_id?: string;
   company_name: string;
   company_nip?: string;
   company_address?: string;
@@ -47,6 +52,10 @@ export interface CreateOfferPayload {
   contact_email?: string;
   title: string;
   valid_until?: string;
+}
+
+export interface SendToCrmPayload {
+  estimated_value?: number;
 }
 
 export class OffersApi {
@@ -180,6 +189,23 @@ export class OffersApi {
         success: false,
         message: error instanceof Error ? error.message : "Failed to delete offer",
       };
+    }
+  }
+
+  static async sendToCrm(
+    offerId: string,
+    payload: SendToCrmPayload = {}
+  ): Promise<Offer & { crm_opportunity_id?: number; message?: string }> {
+    try {
+      const response = await fetch(`/api/v1/offers/${offerId}/send-to-crm`, {
+        method: "POST",
+        headers: getHeader(),
+        body: JSON.stringify(payload),
+      });
+      return await ApiResponseHandler.handleResponse(response, "Failed to send offer to CRM");
+    } catch (error) {
+      console.error("Error sending to CRM:", error);
+      throw error;
     }
   }
 

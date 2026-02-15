@@ -26,6 +26,10 @@ const CreateOfferPage: React.FC = () => {
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
   const [selectedContactId, setSelectedContactId] = useState<string>("");
 
+  // Raynet IDs (for CRM write-back)
+  const [raynetCompanyId, setRaynetCompanyId] = useState<string>("");
+  const [raynetContactId, setRaynetContactId] = useState<string>("");
+
   // Form state
   const [title, setTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -80,6 +84,9 @@ const CreateOfferPage: React.FC = () => {
       setCompanyName(company.name);
       setCompanyNip(company.nip || "");
       setCompanyAddress(company.address || "");
+      setRaynetCompanyId(company.raynet_id);
+    } else {
+      setRaynetCompanyId("");
     }
   };
 
@@ -93,6 +100,9 @@ const CreateOfferPage: React.FC = () => {
       setContactLastName(contact.last_name || "");
       setContactPhone(contact.phone || "");
       setContactEmail(contact.email || "");
+      setRaynetContactId(contact.raynet_id);
+    } else {
+      setRaynetContactId("");
     }
   };
 
@@ -125,6 +135,8 @@ const CreateOfferPage: React.FC = () => {
     try {
       // Step 1: Create offer
       const offer = await OffersApi.createOffer({
+        raynet_company_id: raynetCompanyId || undefined,
+        raynet_contact_id: raynetContactId || undefined,
         company_name: companyName,
         company_nip: companyNip || undefined,
         company_address: companyAddress || undefined,

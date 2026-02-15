@@ -128,6 +128,10 @@ def get_raynet_api_key_env():
     return os.getenv("RAYNET_API_KEY")
 
 
+def get_raynet_login_env():
+    return os.getenv("RAYNET_LOGIN")
+
+
 # Gotenberg
 def get_gotenberg_url_env():
     return os.getenv("GOTENBERG_URL")

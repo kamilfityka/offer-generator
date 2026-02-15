@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.database import get_async_session
@@ -30,7 +30,7 @@ async def get_company_contacts(
     company_id: str,
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Get contacts for a specific company."""
+    """Get contacts for a specific company from local cache."""
     contacts = await crm_service.get_contacts_for_company(session, company_id)
     return [
         {
@@ -47,10 +47,20 @@ async def get_company_contacts(
 
 @CRM_ROUTER.post("/sync")
 async def sync_crm_data(session: AsyncSession = Depends(get_async_session)):
-    """Trigger manual sync from Raynet CRM."""
+    """Sync companies from Raynet, then contacts per company."""
     companies = await crm_service.sync_companies(session)
-    contacts = await crm_service.sync_contacts(session)
+    contacts = await crm_service.sync_all_contacts(session)
     return {
         "synced_companies": len(companies),
         "synced_contacts": len(contacts),
     }
+
+
+@CRM_ROUTER.post("/sync/companies/{raynet_company_id}/contacts")
+async def sync_company_contacts(
+    raynet_company_id: str,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Sync contacts for a single company by its Raynet ID."""
+    contacts = await crm_service.sync_contacts_for_company(session, raynet_company_id)
+    return {"synced_contacts": len(contacts)}

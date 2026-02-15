@@ -7,6 +7,7 @@ import {
   Download,
   FileText,
   Loader2,
+  Send,
   Upload,
   Wand2,
 } from "lucide-react";
@@ -15,6 +16,8 @@ import Link from "next/link";
 
 import Wrapper from "@/components/Wrapper";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   OffersApi,
   Offer,
@@ -24,17 +27,9 @@ import OffersHeader from "../../components/OffersHeader";
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   draft: { label: "Robocza", color: "bg-gray-200 text-gray-700" },
   generated: { label: "Wygenerowana", color: "bg-blue-100 text-blue-700" },
-  sent: { label: "Wysłana", color: "bg-yellow-100 text-yellow-700" },
+  sent: { label: "Wysłana do CRM", color: "bg-yellow-100 text-yellow-700" },
   accepted: { label: "Zaakceptowana", color: "bg-green-100 text-green-700" },
   expired: { label: "Wygasła", color: "bg-red-100 text-red-700" },
-};
-
-const STATUS_TRANSITIONS: Record<string, string[]> = {
-  draft: ["generated"],
-  generated: ["sent"],
-  sent: ["accepted", "expired"],
-  accepted: [],
-  expired: [],
 };
 
 const OfferDetailPage: React.FC = () => {
@@ -46,6 +41,8 @@ const OfferDetailPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isSendingToCrm, setIsSendingToCrm] = useState(false);
+  const [estimatedValue, setEstimatedValue] = useState<string>("");
 
   const fetchOffer = useCallback(async () => {
     try {
@@ -53,7 +50,7 @@ const OfferDetailPage: React.FC = () => {
       const data = await OffersApi.getOffer(offerId);
       setOffer(data);
     } catch {
-      toast.error("Nie udało się załadować oferty");
+      toast.error("Nie udalo sie zaladowac oferty");
       router.push("/offers");
     } finally {
       setIsLoading(false);
@@ -70,12 +67,12 @@ const OfferDetailPage: React.FC = () => {
     try {
       const updated = await OffersApi.generatePdf(offer.id);
       setOffer(updated);
-      toast.success("PDF wygenerowany pomyślnie");
+      toast.success("PDF wygenerowany pomyslnie");
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Nie udało się wygenerować PDF"
+          : "Nie udalo sie wygenerowac PDF"
       );
     } finally {
       setIsGenerating(false);
@@ -99,10 +96,34 @@ const OfferDetailPage: React.FC = () => {
       await OffersApi.uploadDescription(offer.id, file);
       toast.success("Plik wgrany");
       fetchOffer();
-    } catch (error) {
-      toast.error("Nie udało się wgrać pliku");
+    } catch {
+      toast.error("Nie udalo sie wgrac pliku");
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleSendToCrm = async () => {
+    if (!offer) return;
+    setIsSendingToCrm(true);
+    try {
+      const payload: { estimated_value?: number } = {};
+      if (estimatedValue) {
+        payload.estimated_value = parseFloat(estimatedValue);
+      }
+      const updated = await OffersApi.sendToCrm(offer.id, payload);
+      setOffer(updated);
+      toast.success(
+        `Oferta wyslana do CRM. Szansa sprzedazy #${updated.crm_opportunity_id || updated.raynet_opportunity_id}`
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Nie udalo sie wyslac do CRM"
+      );
+    } finally {
+      setIsSendingToCrm(false);
     }
   };
 
@@ -112,8 +133,8 @@ const OfferDetailPage: React.FC = () => {
       const updated = await OffersApi.updateStatus(offer.id, newStatus);
       setOffer(updated);
       toast.success("Status zaktualizowany");
-    } catch (error) {
-      toast.error("Nie udało się zmienić statusu");
+    } catch {
+      toast.error("Nie udalo sie zmienic statusu");
     }
   };
 
@@ -131,7 +152,10 @@ const OfferDetailPage: React.FC = () => {
   if (!offer) return null;
 
   const statusInfo = STATUS_LABELS[offer.status] || STATUS_LABELS.draft;
-  const nextStatuses = STATUS_TRANSITIONS[offer.status] || [];
+  const canSendToCrm =
+    offer.status === "generated" &&
+    offer.document_path &&
+    offer.raynet_company_id;
 
   return (
     <div className="min-h-screen bg-[#E9E8F8]">
@@ -143,7 +167,7 @@ const OfferDetailPage: React.FC = () => {
             className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-6"
           >
             <ArrowLeft className="w-4 h-4 mr-1" />
-            Powrót do listy ofert
+            Powrot do listy ofert
           </Link>
 
           {/* Title and status */}
@@ -204,11 +228,21 @@ const OfferDetailPage: React.FC = () => {
               )}
               {offer.valid_until && (
                 <div>
-                  <span className="text-gray-500">Ważna do:</span>{" "}
+                  <span className="text-gray-500">Wazna do:</span>{" "}
                   {offer.valid_until}
                 </div>
               )}
             </div>
+
+            {/* CRM link info */}
+            {offer.raynet_opportunity_id && (
+              <div className="mt-3 pt-3 border-t text-sm">
+                <span className="text-gray-500">Szansa sprzedazy w CRM:</span>{" "}
+                <span className="font-medium text-blue-600">
+                  #{offer.raynet_opportunity_id}
+                </span>
+              </div>
+            )}
           </section>
 
           {/* Actions */}
@@ -223,7 +257,7 @@ const OfferDetailPage: React.FC = () => {
                   <Upload className="w-4 h-4" />
                 )}
                 {offer.description_file_path
-                  ? "Zmień plik opisu"
+                  ? "Zmien plik opisu"
                   : "Wgraj plik opisu"}
                 <input
                   type="file"
@@ -267,32 +301,111 @@ const OfferDetailPage: React.FC = () => {
                 </a>
               )}
 
-              {/* Status transitions */}
-              {nextStatuses
-                .filter((s) => s !== "generated")
-                .map((status) => (
+              {/* Manual status transitions (for sent offers) */}
+              {offer.status === "sent" && (
+                <>
                   <Button
-                    key={status}
                     variant="outline"
-                    onClick={() => handleStatusChange(status)}
+                    onClick={() => handleStatusChange("accepted")}
+                    className="border-green-300 text-green-700 hover:bg-green-50"
                   >
-                    {STATUS_LABELS[status]?.label || status}
+                    Zaakceptowana
                   </Button>
-                ))}
+                  <Button
+                    variant="outline"
+                    onClick={() => handleStatusChange("expired")}
+                    className="border-red-300 text-red-700 hover:bg-red-50"
+                  >
+                    Wygasla
+                  </Button>
+                </>
+              )}
             </div>
 
             {!offer.description_file_path && (
               <p className="text-xs text-amber-600 mt-3">
-                Wgraj plik z opisem oferty (.txt/.md), aby móc wygenerować PDF.
+                Wgraj plik z opisem oferty (.txt/.md), aby moc wygenerowac PDF.
               </p>
             )}
           </section>
+
+          {/* Send to CRM section */}
+          {canSendToCrm && (
+            <section className="bg-blue-50 rounded-lg p-6 border border-blue-200 mb-6">
+              <h2 className="text-lg font-medium mb-2 text-blue-900">
+                Wyslij do Raynet CRM
+              </h2>
+              <p className="text-sm text-blue-700 mb-4">
+                Utworzy szanse sprzedazy, zalaczy PDF oferty i zarejestruje
+                aktywnosc w CRM.
+              </p>
+
+              <div className="flex items-end gap-3">
+                <div>
+                  <Label
+                    htmlFor="estimated-value"
+                    className="text-sm text-blue-800"
+                  >
+                    Szacowana wartosc (PLN, opcjonalne)
+                  </Label>
+                  <Input
+                    id="estimated-value"
+                    type="number"
+                    value={estimatedValue}
+                    onChange={(e) => setEstimatedValue(e.target.value)}
+                    placeholder="np. 12000"
+                    className="mt-1 w-48"
+                  />
+                </div>
+                <Button
+                  onClick={handleSendToCrm}
+                  disabled={isSendingToCrm}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {isSendingToCrm ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Wysylanie...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      Wyslij do CRM
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {!offer.raynet_company_id && (
+                <p className="text-xs text-amber-600 mt-3">
+                  Oferta nie ma przypisanego ID firmy z CRM. Wybierz firme z
+                  Raynet podczas tworzenia oferty.
+                </p>
+              )}
+            </section>
+          )}
+
+          {/* CRM confirmation */}
+          {offer.raynet_opportunity_id && (
+            <section className="bg-green-50 rounded-lg p-6 border border-green-200 mb-6">
+              <h2 className="text-lg font-medium mb-2 text-green-900">
+                Wyslano do CRM
+              </h2>
+              <div className="text-sm text-green-800 space-y-1">
+                <p>
+                  Szansa sprzedazy:{" "}
+                  <strong>#{offer.raynet_opportunity_id}</strong>
+                </p>
+                <p>PDF oferty i aktywnosc zostaly zarejestrowane w Raynet.</p>
+              </div>
+            </section>
+          )}
 
           {/* AI generated content preview */}
           {offer.ai_generated_content && (
             <section className="bg-white rounded-lg p-6 border border-gray-200">
               <h2 className="text-lg font-medium mb-4">
-                Wygenerowana treść oferty
+                Wygenerowana tresc oferty
               </h2>
               <div
                 className="prose prose-sm max-w-none"
