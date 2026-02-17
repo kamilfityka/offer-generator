@@ -1,0 +1,23 @@
+services:
+  production:
+    networks:
+      - nginx-proxy-manager_default
+
+  production-gpu:
+    networks:
+      - nginx-proxy-manager_default
+
+  development:
+    networks:
+      - nginx-proxy-manager_default
+
+  development-gpu:
+    networks:
+      - nginx-proxy-manager_default
+
+volumes:
+  pgdata:
+
+networks:
+  nginx-proxy-manager_default:
+    external: true
